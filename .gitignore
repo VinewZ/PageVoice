@@ -1,0 +1,24 @@
+.task
+bin
+frontend/dist
+frontend/node_modules
+frontend/bindings
+frontend/src/routeTree.gen.ts
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+
+# Environment & secrets
+.env
+.env.local
+
+# Logs
+*.log
