@@ -1,0 +1,73 @@
+version: '3'
+
+tasks:
+  install:deps:
+    summary: Install frontend dependencies
+    dir: frontend
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules
+    preconditions:
+      - sh: bun --version
+        msg: "Looks like bun isn't installed."
+    cmds:
+      - bun install
+
+  build:
+    label: build:frontend (DEV={{.DEV}})
+    summary: Build the frontend project
+    dir: frontend
+    sources:
+      - "**/*"
+      - exclude: node_modules/**/*
+    generates:
+      - dist/**/*
+    deps:
+      - task: install:deps
+    cmds:
+      - bun run {{.BUILD_COMMAND}}
+    env:
+      PRODUCTION: '{{if eq .DEV "true"}}false{{else}}true{{end}}'
+    vars:
+      BUILD_COMMAND: '{{if eq .DEV "true"}}build:dev{{else}}build{{end}}'
+
+  vendor:puppertino:
+    summary: Fetches Puppertino CSS into frontend/public for consistent mobile styling
+    sources:
+      - frontend/public/puppertino/puppertino.css
+    generates:
+      - frontend/public/puppertino/puppertino.css
+    cmds:
+      - |
+        set -euo pipefail
+        mkdir -p frontend/public/puppertino
+        if [ ! -f frontend/public/puppertino/puppertino.css ]; then
+          echo "No bundled Puppertino found. Attempting to fetch from GitHub..."
+          if curl -fsSL https://raw.githubusercontent.com/codedgar/Puppertino/main/dist/css/full.css -o frontend/public/puppertino/puppertino.css; then
+            curl -fsSL https://raw.githubusercontent.com/codedgar/Puppertino/main/LICENSE -o frontend/public/puppertino/LICENSE || true
+            echo "Puppertino CSS downloaded to frontend/public/puppertino/puppertino.css"
+          else
+            echo "Warning: Could not fetch Puppertino CSS. Proceeding without download since template may bundle it."
+          fi
+        else
+          echo "Using bundled Puppertino at frontend/public/puppertino/puppertino.css"
+        fi
+        INDEX_HTML=frontend/index.html
+        if [ -f "$INDEX_HTML" ]; then
+          if ! grep -q 'href="/puppertino/puppertino.css"' "$INDEX_HTML"; then
+            awk '
+              /href="\/style.css"\/?/ && !x { print; print "    <link rel=\"stylesheet\" href=\"/puppertino/puppertino.css\"/>"; x=1; next }1
+            ' "$INDEX_HTML" > "$INDEX_HTML.tmp" && mv "$INDEX_HTML.tmp" "$INDEX_HTML"
+          fi
+          sed -E -i'' 's/class=\"btn\"/class=\"p-btn p-prim-col\"/g' "$INDEX_HTML" || true
+        fi
+
+  dev:
+    summary: Runs the frontend in development mode
+    dir: frontend
+    deps:
+      - task: install:deps
+    cmds:
+      - bun run dev -- --port {{.VITE_PORT}} --strictPort

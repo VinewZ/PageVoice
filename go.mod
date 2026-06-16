@@ -1,4 +1,4 @@
-module changeme
+module github.com/vinewz/PageVoice
 
 go 1.25
 

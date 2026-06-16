@@ -1,0 +1,45 @@
+version: '3'
+
+tasks:
+  build:
+    summary: Builds a Docker image for server mode deployment
+    desc: |
+      Creates a minimal Docker image containing the server mode binary.
+      The image is based on distroless for security and small size.
+      Usage: task build:docker [TAG=myapp:latest]
+    cmds:
+      - docker build -t {{.TAG | default (printf "%s:latest" .APP_NAME)}} -f build/docker/Dockerfile.server .
+    vars:
+      TAG: "{{.TAG}}"
+    preconditions:
+      - sh: docker info > /dev/null 2>&1
+        msg: "Docker is required. Please install Docker first."
+      - sh: test -f build/docker/Dockerfile.server
+        msg: "Dockerfile.server not found. Run 'wails3 update build-assets' to generate it."
+
+  run:
+    summary: Builds and runs the Docker image
+    desc: |
+      Builds the Docker image and runs it, exposing port 8080.
+      Usage: task run:docker [TAG=myapp:latest] [PORT=8080]
+    deps:
+      - task: build
+        vars:
+          TAG:
+            ref: .TAG
+    cmds:
+      - docker run --rm -p {{.PORT | default "8080"}}:8080 {{.TAG | default (printf "%s:latest" .APP_NAME)}}
+    vars:
+      TAG: "{{.TAG}}"
+      PORT: "{{.PORT}}"
+
+  setup:
+    summary: Builds Docker image for cross-compilation (~800MB download)
+    desc: |
+      Builds the Docker image needed for cross-compiling to any platform.
+      Run this once to enable cross-platform builds from any OS.
+    cmds:
+      - docker build -t wails-cross -f build/docker/Dockerfile.cross build/docker/
+    preconditions:
+      - sh: docker info > /dev/null 2>&1
+        msg: "Docker is required. Please install Docker first."

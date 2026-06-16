@@ -32,14 +32,14 @@ tasks:
     summary: Builds the application using native Go cross-compilation
     internal: true
     deps:
-      - task: common:go:mod:tidy
-      - task: common:build:frontend
+      - task: common:tooling:go:mod:tidy
+      - task: common:frontend:build
         vars:
           BUILD_FLAGS:
             ref: .BUILD_FLAGS
           DEV:
             ref: .DEV
-      - task: common:generate:icons
+      - task: common:tooling:generate:icons
     cmds:
       - task: generate:syso
       - go build {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}.exe"
@@ -58,8 +58,8 @@ tasks:
     summary: Cross-compiles for Windows using Docker with Zig (for CGO builds on non-Windows)
     internal: true
     deps:
-      - task: common:build:frontend
-      - task: common:generate:icons
+      - task: common:frontend:build
+      - task: common:tooling:generate:icons
     preconditions:
       - sh: docker info > /dev/null 2>&1
         msg: "Docker is required for CGO cross-compilation. Please install Docker."

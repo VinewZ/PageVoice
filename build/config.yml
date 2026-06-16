@@ -1,5 +1,5 @@
 # This file contains the configuration for this project.
-# When you update `info` or `fileAssociations`, run `wails3 task common:update:build-assets` to update the assets.
+# When you update `info` or `fileAssociations`, run `wails3 task common:tooling:update:build-assets` to update the assets.
 # Note that this will overwrite any changes you have made to the assets.
 version: '3'
 
@@ -15,20 +15,6 @@ info:
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
   #                               # Should match the name of your .icon file without the extension
   #                               # If not set and Assets.car exists, defaults to "appicon"
-
-# iOS build configuration (uncomment to customise iOS project generation)
-# Note: Keys under `ios` OVERRIDE values under `info` when set.
-# ios:
-#   # The iOS bundle identifier used in the generated Xcode project (CFBundleIdentifier)
-#   bundleID: "com.mycompany.myproduct"
-#   # The display name shown under the app icon (CFBundleDisplayName/CFBundleName)
-#   displayName: "My Product"
-#   # The app version to embed in Info.plist (CFBundleShortVersionString/CFBundleVersion)
-#   version: "0.0.1"
-#   # The company/organisation name for templates and project settings
-#   company: "My Company"
-#   # Additional comments to embed in Info.plist metadata
-#   comments: "Some Product Comments"
 
 # Dev mode configuration
 dev_mode:
@@ -53,7 +39,7 @@ dev_mode:
   executes:
     - cmd: wails3 build DEV=true
       type: blocking
-    - cmd: wails3 task common:dev:frontend
+    - cmd: wails3 task common:frontend:dev
       type: background
     - cmd: wails3 task run
       type: primary

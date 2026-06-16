@@ -30,14 +30,14 @@ tasks:
     summary: Builds the application natively on macOS
     internal: true
     deps:
-      - task: common:go:mod:tidy
-      - task: common:build:frontend
+      - task: common:tooling:go:mod:tidy
+      - task: common:frontend:build
         vars:
           BUILD_FLAGS:
             ref: .BUILD_FLAGS
           DEV:
             ref: .DEV
-      - task: common:generate:icons
+      - task: common:tooling:generate:icons
     cmds:
       - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
     vars:
@@ -56,8 +56,8 @@ tasks:
     summary: Cross-compiles for macOS using Docker (for Linux/Windows hosts)
     internal: true
     deps:
-      - task: common:build:frontend
-      - task: common:generate:icons
+      - task: common:frontend:build
+      - task: common:tooling:generate:icons
     preconditions:
       - sh: docker info > /dev/null 2>&1
         msg: "Docker is required for cross-compilation. Please install Docker."

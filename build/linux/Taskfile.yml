@@ -40,14 +40,14 @@ tasks:
     summary: Builds the application natively on Linux
     internal: true
     deps:
-      - task: common:go:mod:tidy
-      - task: common:build:frontend
+      - task: common:tooling:go:mod:tidy
+      - task: common:frontend:build
         vars:
           BUILD_FLAGS:
             ref: .BUILD_FLAGS
           DEV:
             ref: .DEV
-      - task: common:generate:icons
+      - task: common:tooling:generate:icons
       - task: generate:dotdesktop
     cmds:
       - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
@@ -64,8 +64,8 @@ tasks:
     summary: Builds for Linux using Docker (for non-Linux hosts or when no C compiler available)
     internal: true
     deps:
-      - task: common:build:frontend
-      - task: common:generate:icons
+      - task: common:frontend:build
+      - task: common:tooling:generate:icons
       - task: generate:dotdesktop
     preconditions:
       - sh: docker info > /dev/null 2>&1
