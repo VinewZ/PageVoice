@@ -2,13 +2,19 @@ package textupload
 
 import (
 	"bytes"
+	"crypto/rand"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
+	"github.com/adrg/xdg"
 	"github.com/kapmahc/epub"
 	"github.com/ledongthuc/pdf"
 	"github.com/neurosnap/sentences"
@@ -62,6 +68,16 @@ func (s *Service) ProcessFile(fileName string, fileData []byte, language string)
 		return nil, err
 	}
 
+	title := meta.Title
+	if title == "" {
+		title = strings.TrimSuffix(fileName, ext)
+	}
+
+	id, dir, err := saveToDisk(text, meta, language, title, fileName)
+	if err != nil {
+		return nil, err
+	}
+
 	return &UploadResult{
 		FileName:      fileName,
 		FileType:      ext[1:],
@@ -70,6 +86,8 @@ func (s *Service) ProcessFile(fileName string, fileData []byte, language string)
 		Sentences:     sentences,
 		TotalChars:    len(text),
 		SentenceCount: len(sentences),
+		BookID:        id,
+		DataDir:       dir,
 	}, nil
 }
 
@@ -197,4 +215,158 @@ func splitSentences(text string, language string) ([]Sentence, error) {
 		}
 	}
 	return result, nil
+}
+
+// --- disk persistence ---
+
+var nonAlpha = regexp.MustCompile(`[^a-z0-9]+`)
+
+func genID() string {
+	n, err := rand.Int(rand.Reader, big.NewInt(0x1000000))
+	if err != nil {
+		return "000000"
+	}
+	return fmt.Sprintf("%06x", n.Int64())
+}
+
+func dirName(title string) string {
+	s := strings.TrimSpace(strings.ToLower(title))
+	s = nonAlpha.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if len(s) > 48 {
+		s = s[:48]
+	}
+	if s == "" {
+		s = "untitled"
+	}
+	return s + "-" + genID()
+}
+
+type saveResult struct {
+	ID  string
+	Dir string
+}
+
+func saveToDisk(text string, meta Metadata, language, title, fileName string) (string, string, error) {
+	id := genID()
+	dir := dirName(title)
+	bookDir := filepath.Join(xdg.DataHome, "page-voice", "books", dir)
+
+	if err := os.MkdirAll(bookDir, 0755); err != nil {
+		return "", "", fmt.Errorf("create book dir: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(bookDir, "original.txt"), []byte(text), 0644); err != nil {
+		return "", "", fmt.Errorf("write original.txt: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	meta.Language = language
+	meta.SourceFile = fileName
+	meta.ImportedAt = now
+
+	metaBytes, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return "", "", fmt.Errorf("marshal metadata: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(bookDir, "metadata.json"), metaBytes, 0644); err != nil {
+		return "", "", fmt.Errorf("write metadata.json: %w", err)
+	}
+
+	state := State{
+		Status:       "pending",
+		ChunkLength:  250,
+		CurrentChunk: 0,
+		TotalChunks:  0,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	stateBytes, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return "", "", fmt.Errorf("marshal state: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(bookDir, "state.json"), stateBytes, 0644); err != nil {
+		return "", "", fmt.Errorf("write state.json: %w", err)
+	}
+
+	if err := appendLibrary(id, title, dir); err != nil {
+		return "", "", fmt.Errorf("update library.json: %w", err)
+	}
+
+	return id, bookDir, nil
+}
+
+func (s *Service) GetLibrary() ([]LibraryEntry, error) {
+	libPath := libraryPath()
+	data, err := os.ReadFile(libPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []LibraryEntry{}, nil
+		}
+		return nil, fmt.Errorf("read library.json: %w", err)
+	}
+	var entries []LibraryEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, fmt.Errorf("parse library.json: %w", err)
+	}
+	return entries, nil
+}
+
+func libraryPath() string {
+	return filepath.Join(xdg.DataHome, "page-voice", "library.json")
+}
+
+func (s *Service) GetBook(dirName string) (*BookDetail, error) {
+	bookDir := filepath.Join(xdg.DataHome, "page-voice", "books", dirName)
+
+	metaBytes, err := os.ReadFile(filepath.Join(bookDir, "metadata.json"))
+	if err != nil {
+		return nil, fmt.Errorf("read metadata.json: %w", err)
+	}
+	var meta Metadata
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		return nil, fmt.Errorf("parse metadata.json: %w", err)
+	}
+
+	stateBytes, err := os.ReadFile(filepath.Join(bookDir, "state.json"))
+	if err != nil {
+		return nil, fmt.Errorf("read state.json: %w", err)
+	}
+	var state State
+	if err := json.Unmarshal(stateBytes, &state); err != nil {
+		return nil, fmt.Errorf("parse state.json: %w", err)
+	}
+
+	id := dirName[strings.LastIndex(dirName, "-")+1:]
+
+	return &BookDetail{
+		ID:       id,
+		DirName:  dirName,
+		Metadata: meta,
+		State:    state,
+	}, nil
+}
+
+func appendLibrary(id, title, dir string) error {
+	libPath := libraryPath()
+
+	var entries []LibraryEntry
+
+	if data, err := os.ReadFile(libPath); err == nil {
+		json.Unmarshal(data, &entries)
+	}
+
+	entries = append(entries, LibraryEntry{ID: id, Title: title, DirName: dir})
+
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(libPath), 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(libPath, data, 0644)
 }
