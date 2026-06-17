@@ -3,7 +3,6 @@ package textupload
 import (
 	"bytes"
 	"crypto/rand"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,12 +16,9 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/kapmahc/epub"
 	"github.com/ledongthuc/pdf"
-	"github.com/neurosnap/sentences"
+	"github.com/vinewz/PageVoice/internal/data/sentences"
 	"golang.org/x/net/html"
 )
-
-//go:embed language-data/*.json
-var languageData embed.FS
 
 type Service struct{}
 
@@ -63,11 +59,6 @@ func (s *Service) ProcessFile(fileName string, fileData []byte, language string)
 		return nil, err
 	}
 
-	sentences, err := splitSentences(text, language)
-	if err != nil {
-		return nil, err
-	}
-
 	title := meta.Title
 	if title == "" {
 		title = strings.TrimSuffix(fileName, ext)
@@ -83,12 +74,15 @@ func (s *Service) ProcessFile(fileName string, fileData []byte, language string)
 		FileType:      ext[1:],
 		Language:      language,
 		Metadata:      meta,
-		Sentences:     sentences,
 		TotalChars:    len(text),
-		SentenceCount: len(sentences),
+		SentenceCount: 0,
 		BookID:        id,
 		DataDir:       dir,
 	}, nil
+}
+
+func (s *Service) SplitText(text string, language string) ([]string, error) {
+	return sentences.Split(text, language)
 }
 
 func extractPDF(path string) (string, Metadata, error) {
@@ -106,6 +100,8 @@ func extractPDF(path string) (string, Metadata, error) {
 		meta.Author = info.Key("Author").Text()
 	}
 
+	meta.TOC = flattenPDFOutline(r.Outline(), 0)
+
 	textReader, err := r.GetPlainText()
 	if err != nil {
 		return "", Metadata{}, fmt.Errorf("extract pdf text: %w", err)
@@ -117,6 +113,26 @@ func extractPDF(path string) (string, Metadata, error) {
 	}
 
 	return buf.String(), meta, nil
+}
+
+func flattenPDFOutline(o pdf.Outline, depth int) []TOCEntry {
+	var entries []TOCEntry
+	if o.Title != "" {
+		entries = append(entries, TOCEntry{Title: o.Title, Depth: depth})
+	}
+	for _, child := range o.Child {
+		entries = append(entries, flattenPDFOutline(child, depth+1)...)
+	}
+	return entries
+}
+
+func flattenNavPoints(points []epub.NavPoint, depth int) []TOCEntry {
+	var entries []TOCEntry
+	for _, p := range points {
+		entries = append(entries, TOCEntry{Title: p.Text, Depth: depth})
+		entries = append(entries, flattenNavPoints(p.Points, depth+1)...)
+	}
+	return entries
 }
 
 func extractEPUB(path string) (string, Metadata, error) {
@@ -133,6 +149,8 @@ func extractEPUB(path string) (string, Metadata, error) {
 	if len(bk.Opf.Metadata.Creator) > 0 {
 		meta.Author = bk.Opf.Metadata.Creator[0].Data
 	}
+
+	meta.TOC = flattenNavPoints(bk.Ncx.Points, 0)
 
 	var textBuilder strings.Builder
 	for _, item := range bk.Opf.Spine.Items {
@@ -190,33 +208,6 @@ func extractTextFromHTML(content string) string {
 	return buf.String()
 }
 
-func splitSentences(text string, language string) ([]Sentence, error) {
-	lang := strings.ToLower(language)
-	jsonPath := fmt.Sprintf("language-data/%s.json", lang)
-
-	b, err := languageData.ReadFile(jsonPath)
-	if err != nil {
-		return nil, fmt.Errorf("unsupported language %q: %w", language, err)
-	}
-
-	training, err := sentences.LoadTraining(b)
-	if err != nil {
-		return nil, fmt.Errorf("load training data for %q: %w", language, err)
-	}
-
-	tokenizer := sentences.NewSentenceTokenizer(training)
-	raw := tokenizer.Tokenize(text)
-
-	result := make([]Sentence, len(raw))
-	for i, s := range raw {
-		result[i] = Sentence{
-			Index: i + 1,
-			Text:  strings.TrimSpace(s.Text),
-		}
-	}
-	return result, nil
-}
-
 // --- disk persistence ---
 
 var nonAlpha = regexp.MustCompile(`[^a-z0-9]+`)
@@ -242,13 +233,7 @@ func dirName(title string) string {
 	return s + "-" + genID()
 }
 
-type saveResult struct {
-	ID  string
-	Dir string
-}
-
 func saveToDisk(text string, meta Metadata, language, title, fileName string) (string, string, error) {
-	id := genID()
 	dir := dirName(title)
 	bookDir := filepath.Join(xdg.DataHome, "page-voice", "books", dir)
 
@@ -276,7 +261,7 @@ func saveToDisk(text string, meta Metadata, language, title, fileName string) (s
 
 	state := State{
 		Status:       "pending",
-		ChunkLength:  250,
+		ChunkLength:  2500,
 		CurrentChunk: 0,
 		TotalChunks:  0,
 		CreatedAt:    now,
@@ -290,11 +275,11 @@ func saveToDisk(text string, meta Metadata, language, title, fileName string) (s
 		return "", "", fmt.Errorf("write state.json: %w", err)
 	}
 
-	if err := appendLibrary(id, title, dir); err != nil {
+	if err := appendLibrary(dir, title, dir); err != nil {
 		return "", "", fmt.Errorf("update library.json: %w", err)
 	}
 
-	return id, bookDir, nil
+	return dir, bookDir, nil
 }
 
 func (s *Service) GetLibrary() ([]LibraryEntry, error) {
@@ -338,7 +323,11 @@ func (s *Service) GetBook(dirName string) (*BookDetail, error) {
 		return nil, fmt.Errorf("parse state.json: %w", err)
 	}
 
-	id := dirName[strings.LastIndex(dirName, "-")+1:]
+	idx := strings.LastIndex(dirName, "-")
+	id := dirName
+	if idx >= 0 {
+		id = dirName[idx+1:]
+	}
 
 	return &BookDetail{
 		ID:       id,
@@ -346,6 +335,42 @@ func (s *Service) GetBook(dirName string) (*BookDetail, error) {
 		Metadata: meta,
 		State:    state,
 	}, nil
+}
+
+func (s *Service) DeleteBook(dirName string) error {
+	bookDir := filepath.Join(xdg.DataHome, "page-voice", "books", dirName)
+
+	if err := os.RemoveAll(bookDir); err != nil {
+		return fmt.Errorf("remove book dir: %w", err)
+	}
+
+	libPath := libraryPath()
+	data, err := os.ReadFile(libPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read library.json: %w", err)
+	}
+
+	var entries []LibraryEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return fmt.Errorf("parse library.json: %w", err)
+	}
+
+	filtered := entries[:0]
+	for _, e := range entries {
+		if e.DirName != dirName {
+			filtered = append(filtered, e)
+		}
+	}
+
+	out, err := json.MarshalIndent(filtered, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal library.json: %w", err)
+	}
+
+	return os.WriteFile(libPath, out, 0644)
 }
 
 func appendLibrary(id, title, dir string) error {

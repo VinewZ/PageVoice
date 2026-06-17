@@ -1,11 +1,17 @@
 package textupload
 
+type TOCEntry struct {
+	Title string `json:"title"`
+	Depth int    `json:"depth"`
+}
+
 type Metadata struct {
-	Title      string `json:"title,omitempty"`
-	Author     string `json:"author,omitempty"`
-	Language   string `json:"language"`
-	SourceFile string `json:"sourceFile"`
-	ImportedAt string `json:"importedAt"`
+	Title      string     `json:"title,omitempty"`
+	Author     string     `json:"author,omitempty"`
+	Language   string     `json:"language"`
+	SourceFile string     `json:"sourceFile"`
+	ImportedAt string     `json:"importedAt"`
+	TOC        []TOCEntry `json:"toc,omitempty"`
 }
 
 type State struct {

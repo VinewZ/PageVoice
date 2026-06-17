@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/vinewz/PageVoice/internal/services/textupload"
+	ttssvc "github.com/vinewz/PageVoice/internal/services/tts"
 	"github.com/vinewz/PageVoice/internal/tts/piper"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -14,9 +15,9 @@ func Run(assets embed.FS) {
 	if err != nil {
 		log.Fatalf("piper setup: %v", err)
 	}
-	_ = piperDir
 
 	textSvc := textupload.New()
+	ttsSvc := ttssvc.New(piperDir)
 
 	app := application.New(application.Options{
 		Name:        "PageVoice",
@@ -30,6 +31,7 @@ func Run(assets embed.FS) {
 	})
 
 	app.RegisterService(application.NewService(textSvc))
+	app.RegisterService(application.NewService(ttsSvc))
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Main",

@@ -1,14 +1,14 @@
 package piper
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/vinewz/PageVoice/internal/tts/wav"
 )
 
 type Piper struct {
@@ -55,7 +55,7 @@ func (p *Piper) Synthesize(text string, modelPath string, configPath string) ([]
 		return nil, fmt.Errorf("run piper: %w", err)
 	}
 
-	return encodeWAV(raw, sampleRate), nil
+	return wav.Encode(raw, sampleRate)
 }
 
 func readSampleRate(configPath string) (int, error) {
@@ -74,30 +74,4 @@ func readSampleRate(configPath string) (int, error) {
 	}
 
 	return cfg.Audio.SampleRate, nil
-}
-
-func encodeWAV(pcm []byte, sampleRate int) []byte {
-	dataSize := len(pcm)
-	fileSize := 36 + dataSize
-
-	buf := new(bytes.Buffer)
-
-	binary.Write(buf, binary.LittleEndian, []byte("RIFF"))
-	binary.Write(buf, binary.LittleEndian, int32(fileSize))
-	binary.Write(buf, binary.LittleEndian, []byte("WAVE"))
-
-	binary.Write(buf, binary.LittleEndian, []byte("fmt "))
-	binary.Write(buf, binary.LittleEndian, int32(16))
-	binary.Write(buf, binary.LittleEndian, int16(1))
-	binary.Write(buf, binary.LittleEndian, int16(1))
-	binary.Write(buf, binary.LittleEndian, int32(sampleRate))
-	binary.Write(buf, binary.LittleEndian, int32(sampleRate*2))
-	binary.Write(buf, binary.LittleEndian, int16(2))
-	binary.Write(buf, binary.LittleEndian, int16(16))
-
-	binary.Write(buf, binary.LittleEndian, []byte("data"))
-	binary.Write(buf, binary.LittleEndian, int32(dataSize))
-	buf.Write(pcm)
-
-	return buf.Bytes()
 }

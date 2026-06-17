@@ -2,6 +2,7 @@
 bin
 frontend/dist
 frontend/node_modules
+node_modules
 frontend/bindings
 frontend/src/routeTree.gen.ts
 build/linux/appimage/build

@@ -1,0 +1,7 @@
+{
+  "dependencies": {},
+  "devDependencies": {
+    "@tanstack/devtools-vite": "^0.7.0",
+    "@tanstack/react-devtools": "^0.10.5"
+  }
+}

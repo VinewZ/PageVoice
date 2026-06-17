@@ -5,7 +5,6 @@
     "jsx": "react-jsx",
     "module": "ESNext",
 	"paths": {
-			"#/*": ["./src/*"],
 			"@/*": ["./src/*"],
 			"@bindings/*": ["./bindings/*"]
 		},
