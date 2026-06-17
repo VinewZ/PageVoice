@@ -314,7 +314,7 @@ func (s *Service) GetLibrary() ([]LibraryEntry, error) {
 }
 
 func libraryPath() string {
-	return filepath.Join(xdg.DataHome, "page-voice", "library.json")
+	return filepath.Join(xdg.DataHome, "page-voice", "books", "library.json")
 }
 
 func (s *Service) GetBook(dirName string) (*BookDetail, error) {

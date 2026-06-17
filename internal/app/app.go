@@ -5,10 +5,17 @@ import (
 	"log"
 
 	"github.com/vinewz/PageVoice/internal/services/textupload"
+	"github.com/vinewz/PageVoice/internal/tts/piper"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 func Run(assets embed.FS) {
+	piperDir, err := piper.EnsureExtracted()
+	if err != nil {
+		log.Fatalf("piper setup: %v", err)
+	}
+	_ = piperDir
+
 	textSvc := textupload.New()
 
 	app := application.New(application.Options{
@@ -34,7 +41,7 @@ func Run(assets embed.FS) {
 		URL: "/",
 	})
 
-	err := app.Run()
+	err = app.Run()
 	if err != nil {
 		log.Fatal(err)
 	}

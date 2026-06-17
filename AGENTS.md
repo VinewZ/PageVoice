@@ -29,19 +29,44 @@
 
 ## Architecture
 
-**Single Go service** at `internal/services/textupload/` with 3 Wails-bound methods:
-- `ProcessFile(fileName, base64Data, language) → UploadResult` — accepts file as base64, extracts text (PDF/EPUB/TXT), splits into sentences, persists to XDG, returns sentences + metadata
-- `GetLibrary() → LibraryEntry[]` — reads `library.json` from XDG data dir
-- `GetBook(dirName) → BookDetail` — reads `metadata.json` + `state.json` for a given book dir
+**Go services** at `internal/services/`:
+- `textupload/` — 3 Wails-bound methods:
+  - `ProcessFile(fileName, fileData, language) → UploadResult` — accepts file bytes, extracts text (PDF/EPUB/TXT), persists to XDG
+  - `GetLibrary() → LibraryEntry[]` — reads `library.json` from `books/` dir
+  - `GetBook(dirName) → BookDetail` — reads `metadata.json` + `state.json`
+- `tts/` *(planned)* — TTS with Piper CLI
+
+**Piper TTS** (`internal/tts/piper/`):
+- Embeds `piper_linux_x86_64.tar.gz` (rhasspy/piper v2023.11.14-2, MIT) via `//go:embed`
+- Extracts to `$XDG_DATA_HOME/page-voice/piper/` on first run (version marker file prevents re-extraction)
+- Linux-only: `//go:build linux && amd64` (add `arm64` support by embedding `piper_linux_aarch64.tar.gz`)
+- `EnsureExtracted()` — called at app startup in `internal/app/app.go`, creates the piper directory with binary, shared libs, and espeak-ng-data
+- `Piper.Synthesize(text, modelPath, configPath) → WAV bytes` — spawns per-call subprocess, pipes text via stdin, reads `--output-raw` PCM, encodes to WAV
+- Uses `LD_LIBRARY_PATH` to resolve `libespeak-ng.so`, `libonnxruntime.so`, `libpiper_phonemize.so`
+- Voice config JSON provides sample rate (defaults to 22050)
 
 **XDG data layout** (`$XDG_DATA_HOME/page-voice/`):
 ```
-library.json  ← [{id, title, dirName}]
-books/<sanitized-title-8c8f9c>/
-  ├── original.txt    ← raw text
-  ├── metadata.json   ← {title, author, language, sourceFile, importedAt}
-  ├── state.json      ← {status, chunkLength:250, currentChunk, totalChunks, createdAt, updatedAt}
-  └── audio/          ← future TTS WAV files
+piper/
+├── piper                        ← extracted binary
+├── libespeak-ng.so.1.52.0.1
+├── libonnxruntime.so.1.14.1
+├── libpiper_phonemize.so.1.2.0
+├── espeak-ng-data/              ← phoneme dictionaries
+└── voices/                      ← downloaded ONNX voice models
+    └── en_US-lessac-medium/
+        ├── en_US-lessac-medium.onnx
+        └── en_US-lessac-medium.onnx.json
+books/
+├── library.json                 ← [{id, title, dirName}]
+└── <sanitized-title-8c8f9c>/
+    ├── original.txt             ← raw text
+    ├── metadata.json            ← {title, author, language, sourceFile, importedAt}
+    ├── state.json               ← {status, chunkLength:2500, currentChunk, totalChunks, createdAt, updatedAt}
+    ├── sentences.json           ← split sentences with chunk mapping
+    └── audio/                   ← generated WAV files per chunk
+        ├── chunk_001.wav
+        └── ...
 ```
 
 State statuses: `pending`, `running`, `paused`, `completed`, `failed`. `library.json` uses full language names (e.g. `"english"`), `sourceFile` stores upload filename only (no path).
