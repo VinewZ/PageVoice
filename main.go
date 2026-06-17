@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"fmt"
 
 	"github.com/vinewz/PageVoice/internal/app"
 )
@@ -11,6 +10,5 @@ import (
 var assets embed.FS
 
 func main() {
-	fmt.Println("Lesgo")
 	app.Run(assets)
 }
